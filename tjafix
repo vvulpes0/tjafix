@@ -1,4 +1,4 @@
-#!/usr/bin/env awk -f
+#!/usr/bin/awk -f
 # Copyright (c) 2019, Dakotah Lambert
 
 function end () {
