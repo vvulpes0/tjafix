@@ -1,0 +1,123 @@
+#!/usr/bin/env awk -f
+# Copyright (c) 2019, Dakotah Lambert
+
+function end () {
+	if (inBranch) {
+		print "#BRANCHEND"
+		inBranch = 0
+	}
+	if (! ended) {
+		print "#END"
+		ended = 1
+	}
+	poststart = 0
+}
+
+# separate lines by CRLF
+BEGIN { ended = 1; ORS = "\015\012" }
+
+# strip CR from CRLF sequences if OS doesn't want it
+# presumably the print function uses the expected line-endings
+{ sub("\015$", "") }
+
+# strip comments
+{ sub("//.*$", "") }
+{ sub(";.*$", "") }
+
+# ignore blank lines before #START
+/^$/ {
+	if (poststart) {
+		print
+	}
+	next
+}
+
+# put a blank line immediately before #START
+/^#START/ {
+	end()
+	ended = 0
+	print ""
+	print
+	poststart = 1
+	next
+}
+
+# in the header, remove spaces after colons
+! poststart {
+	sub(": ?",":")
+}
+
+# set the difficulty to a word, not a number
+/COURSE:/ {
+	split($0, a, ":")
+	difficulty = "Oni"
+	a[2] = tolower(a[2])
+	gsub("[[:space:]]", "", a[2])
+	if (a[2] == 0 || a[2] == "easy") {
+		difficulty = "Easy"
+	} else if (a[2] == 1 || a[2] == "normal") {
+		difficulty = "Normal"
+	} else if (a[2] == 2 || a[2] == "hard") {
+		difficulty = "Hard"
+## The Ura/Edit difficulty displays as Oni in the menu, but is separate.
+	} else if (a[2] == 4 || a[2] == "ura" || a[2] == "edit") {
+		difficulty = "Edit"
+	}
+	$0 = "COURSE:" difficulty
+}
+
+# If the line starts with a note-like character
+# and doesn't contain a colon (indicating metadata),
+# it's probably (a part of) a measure.
+# We walk through the notes and replace with 0
+# anything that comes between a note that needs an end
+# and its corresponding end.
+/^[[:digit:]ABF]/ && ! /[:]/ {
+	n=split($0, a, "")
+	o=""
+	for (i = 1; i <= n; ++i) {
+		if (a[i] !~ "^[[:digit:]]+$") {
+			; // no change
+		} else if ((await && a[i] == 8) || (await9 && a[i] == 9)) {
+			await = 0
+			await9 = 0
+		} else if (await) {
+			a[i] = "0"
+		} else if (a[i] ~ "[567]") {
+			await = 1
+		} else if (a[i] == "9") {
+			await = 1
+			await9 = 1
+		}
+		o = o a[i]
+	}
+	$0 = o
+}
+
+/^#/ {
+	n=match($0, "[^#A-Z]")
+	if (n != 0 && substr($0, n, 1) !~ "[[:space:]]") {
+		$0 = substr($0, 1, n-1) " " substr($0, n, length - n + 1)
+	}
+}
+
+/^#BRANCHSTART/ {
+	inBranch = 1
+}
+
+/^#BRANCHEND/ {
+	inBranch = 0
+}
+
+# colons are only in metadata.
+# updating metadata should not happen during a song,
+# so if we see an update, it should be after #END
+/:/ { end() }
+
+# If you see an #END while in a branch, end that branch.
+/^#END/ { end(); next }
+
+{print}
+
+# if you reach EOF without ending the song, end it now.
+END { end() }
