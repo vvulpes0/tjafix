@@ -14,18 +14,17 @@ function end () {
 }
 
 # separate lines by CRLF
-BEGIN { ended = 1; ORS = "\015\012" }
+BEGIN { ended = 1; ORS = "\015\012"; level = -1 }
 
 # strip CR from CRLF sequences if OS doesn't want it
-# presumably the print function uses the expected line-endings
 { sub("\015$", "") }
 
 # strip comments
 { sub("//.*$", "") }
 { sub(";.*$", "") }
 
-# ignore blank lines before #START
-/^$/ {
+# ignore blank lines (and those consisting on only whitespace) before #START
+/^[[:space:]]*$/ {
 	if (poststart) {
 		print
 	}
@@ -33,12 +32,23 @@ BEGIN { ended = 1; ORS = "\015\012" }
 }
 
 # put a blank line immediately before #START
-/^#START/ {
+$1 ~ /^#START/ {
 	end()
 	ended = 0
+	# Default is Oni: be explicit about that
+	if (! seenCourse) {
+		print "COURSE:Oni"
+	}
+	# Make sure that LEVEL appears after COURSE
+	# so that multi-difficulty files work right
+	if (level >= 0) {
+		print "LEVEL:" level
+		level = -1
+	}
 	print ""
 	print
 	poststart = 1
+	seenCourse = 0
 	next
 }
 
@@ -47,8 +57,17 @@ BEGIN { ended = 1; ORS = "\015\012" }
 	sub(": ?",":")
 }
 
+# in multi-difficulty files, LEVEL must appear after COURSE.
+# We'll enforce that.
+/LEVEL:/ && ! seenCourse {
+	split($0,a,":")
+	level=a[2]
+	next
+}
+
 # set the difficulty to a word, not a number
 /COURSE:/ {
+	seenCourse=1
 	split($0, a, ":")
 	difficulty = "Oni"
 	a[2] = tolower(a[2])
@@ -72,7 +91,7 @@ BEGIN { ended = 1; ORS = "\015\012" }
 # We walk through the notes and replace with 0
 # anything that comes between a note that needs an end
 # and its corresponding end.
-/^[[:digit:]ABF]/ && ! /[:]/ {
+$1 ~ /^[[:digit:]ABF]/ && ! /:/ {
 	n=split($0, a, "")
 	o=""
 	for (i = 1; i <= n; ++i) {
@@ -94,18 +113,18 @@ BEGIN { ended = 1; ORS = "\015\012" }
 	$0 = o
 }
 
-/^#/ {
-	n=match($0, "[^#A-Z]")
-	if (n != 0 && substr($0, n, 1) !~ "[[:space:]]") {
-		$0 = substr($0, 1, n-1) " " substr($0, n, length - n + 1)
+$1 ~ /^#/ {
+	n=match($1, "[^#A-Z]")
+	if (n != 0 && substr($1, n, 1) !~ "[[:space:]]") {
+		$1 = substr($1, 1, n-1) " " substr($1, n, length - n + 1)
 	}
 }
 
-/^#BRANCHSTART/ {
+$1 ~ /^#BRANCHSTART/ {
 	inBranch = 1
 }
 
-/^#BRANCHEND/ {
+$1 ~ /^#BRANCHEND/ {
 	inBranch = 0
 }
 
@@ -115,7 +134,7 @@ BEGIN { ended = 1; ORS = "\015\012" }
 /:/ { end() }
 
 # If you see an #END while in a branch, end that branch.
-/^#END/ { end(); next }
+$1 ~ /^#END/ { end(); next }
 
 {print}
 
